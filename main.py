@@ -19,12 +19,19 @@ PORT = 9191
 
 
 class ApiRequestHandler(BaseHTTPRequestHandler):
-    def __init__(self, request, client_address, ref_req, api_ref):
-        self.api = api_ref
-        super().__init__(request, client_address, ref_req)
+    def __init__(self, request, client_address, server, api):
+        self.api = api
+        super().__init__(request, client_address, server)
 
-    def call_api(self, _method, path, args):
-        print(api.routing)
+    def do_GET(self):
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path
+        args = parse_qs(parsed_url.query)
+
+        for k in args.keys():
+            if len(args[k]) == 1:
+                args[k] = args[k][0]
+
         if path in api.routing:
             try:
                 result = api.routing[path](args)
@@ -40,17 +47,6 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"error": "not found"}, indent=4).encode())
 
-    def do_GET(self):
-        parsed_url = urlparse(self.path)
-        path = parsed_url.path
-        args = parse_qs(parsed_url.query)
-
-        for k in args.keys():
-            if len(args[k]) == 1:
-                args[k] = args[k][0]
-
-        self.call_api("GET", path, args)
-
 
 class API:
     def __init__(self):
@@ -63,9 +59,7 @@ class API:
         return wrapper
 
     def __call__(self, request, client_address, ref_request):
-        api_handler = ApiRequestHandler(
-            request, client_address, ref_request, api_ref=self
-        )
+        api_handler = ApiRequestHandler(request, client_address, ref_request, api=self)
         return api_handler
 
 
