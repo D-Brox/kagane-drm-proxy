@@ -1,0 +1,15 @@
+services:
+  kagane:
+    image: ghcr.io/astral-sh/uv:alpine
+    container_name: kagane-drm
+    command: uv run main.py
+    volumes:
+      - ./main.py:/main.py
+      - ./device.wvd:/device.wvd
+    ports:
+      - "9191:9191"
+    restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge
