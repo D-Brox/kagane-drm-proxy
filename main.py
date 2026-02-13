@@ -1,21 +1,32 @@
 import base64
 import hashlib
 import json
+import sys
+from gettext import Catalog
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from time import time
+from tokenize import Token
 from urllib.parse import parse_qs, urlparse
 
 import requests
+from bs4 import BeautifulSoup
 from pywidevine.cdm import Cdm
 from pywidevine.device import Device
 from pywidevine.pssh import PSSH
+from requests.sessions import cookiejar_from_dict
 
 # /// script
 # dependencies = [
 #   "pywidevine",
+#   "beautifulsoup4"
 # ]
 # ///
 
+FLARESOLVERR = "http://flaresolverr:8191/v1"
 PORT = 9191
+COOKIES = {"cf_clearance": None, "expiry": int(time()), "user-agent": None}
+TOKEN = {"token": None, "exp": int(time())}
+USERAGENT = None
 
 
 class ApiRequestHandler(BaseHTTPRequestHandler):
@@ -77,14 +88,79 @@ def index(_):
 
 
 def get_pssh(series_id: str, chapter_id: str) -> PSSH:
-    seed = hashlib.sha256(f"{series_id}:{chapter_id}".encode("utf-8")).digest()[:16]
-    key_id = base64.b64decode("7e+LqXnWSs6jyCfc1R0h7Q==")
+    key_id = hashlib.sha256(f":{chapter_id}".encode("utf-8")).digest()[:16]
+    seed = base64.b64decode("7e+LqXnWSs6jyCfc1R0h7Q==")
     zeroes = b"\x00" * 4
-    info = bytes([18, len(seed)]) + seed
+    info = bytes([18, len(key_id)]) + key_id
     info_size = len(info).to_bytes(4, "big")
-    inner = zeroes + key_id + info_size + info
+    inner = zeroes + seed + info_size + info
     outer_size = (len(inner) + 8).to_bytes(4, "big")
     return PSSH(outer_size + b"pssh" + inner)
+
+
+def flaresolverr_session():
+    sessions = json.loads(
+        requests.post(
+            FLARESOLVERR,
+            headers={
+                "accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            json={"cmd": "sessions.list"},
+        ).content
+    )
+    print(sessions)
+    if "kagane" not in sessions["sessions"]:
+        requests.post(
+            FLARESOLVERR,
+            headers={"Content-Type": "application/json"},
+            json={"cmd": "sessions.create", "session": "kagane"},
+        )
+
+
+def update_cookies():
+    if (
+        time() > COOKIES["expiry"]
+        or COOKIES["cf_clearance"] is None
+        or COOKIES["user-agent"] is None
+    ):
+        res = requests.post(
+            FLARESOLVERR,
+            json={
+                "cmd": "request.get",
+                "url": "https://kagane.org",
+                "session": "kagane",
+            },
+        )
+        res = json.loads(res.text)
+        clearance = next(
+            filter(lambda s: s["name"] == "cf_clearance", res["solution"]["cookies"])
+        )
+        COOKIES["cf_clearance"] = clearance["value"]
+        COOKIES["expiry"] = clearance["expiry"]
+        COOKIES["user-agent"] = res["solution"]["userAgent"]
+
+
+def get_integrity(series_id, chapter_id):
+    if time() > TOKEN["exp"] or TOKEN["token"] is None:
+        res = requests.post(
+            FLARESOLVERR,
+            json={
+                "cmd": "request.post",
+                "url": "https://kagane.org/api/integrity",
+                "session": "kagane",
+                "postData": "",
+            },
+        )
+        res = (
+            BeautifulSoup(res.text, features="html.parser")
+            .find("pre")
+            .text.replace("\\", "")
+        )
+
+        res = json.loads(res)
+        TOKEN["token"] = res["token"]
+        TOKEN["exp"] = res["exp"]
 
 
 @api.get("/drm")
@@ -96,14 +172,27 @@ def drm(args):
     cdm = Cdm.from_device(device)
     session_id = cdm.open()
     challenge = cdm.get_license_challenge(session_id, pssh)
+    print("here")
+    update_cookies()
+    print("there")
+    get_integrity(series_id, chapter_id)
+    print(
+        TOKEN,
+        COOKIES,
+        file=sys.stderr,
+    )
     res = requests.post(
-        f"https://api.kagane.org/api/v1/books/{series_id}/file/{chapter_id}",
+        f"https://yuzuki.kagane.org/api/v2/books/{chapter_id}",
         json={"challenge": base64.b64encode(challenge).decode()},
         headers={
             "Origin": "https://kagane.org",
+            "Host": "yuzuki.kagane.org",
             "Referer": "https://kagane.org/",
             "Content-Type": "application/json",
+            "x-integrity-token": TOKEN["token"],
+            "User-Agent": COOKIES["user-agent"],
         },
+        cookies=cookiejar_from_dict({"cf_clearance": COOKIES["cf_clearance"]}),
     )
     cdm.close(session_id)
     return json.loads(res.text)
@@ -111,4 +200,5 @@ def drm(args):
 
 if __name__ == "__main__":
     httpd = HTTPServer(("", PORT), api)
+    flaresolverr_session()
     httpd.serve_forever()

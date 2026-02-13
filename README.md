@@ -1,6 +1,7 @@
 # Kagane DRM Proxy server
 
-This is a server to proxy challenge requests to the Kagane API.
+This is a server to proxy drm challenge requests to the Kagane API.
+Requires FlareSolverr to be running on port 8191 to pass the CloudFlare challenge.
 
 ## Usage
 

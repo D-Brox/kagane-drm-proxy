@@ -9,7 +9,14 @@ services:
     ports:
       - "9191:9191"
     restart: unless-stopped
-
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - TZ=America/Sao_Paulo
+    ports:
+      - "8191:8191"
+    restart: unless-stopped
 networks:
   default:
     driver: bridge
