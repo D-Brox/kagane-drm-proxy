@@ -25,7 +25,7 @@ docker compose up -d
 ```
 
 
-You can send a GET request to `http://localhost:9191/drm?sid=${series_id}&cid=${client_id}` to get the Kagane challenge response for a chapter.
+You can send a GET request to `http://localhost:9191/drm?cid=${client_id}&ds=false` to get the Kagane challenge response for a chapter, with data saver disabled.
 
 ## Disclaimer
 

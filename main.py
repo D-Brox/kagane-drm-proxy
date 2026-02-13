@@ -87,7 +87,7 @@ def index(_):
     }
 
 
-def get_pssh(series_id: str, chapter_id: str) -> PSSH:
+def get_pssh(chapter_id: str) -> PSSH:
     key_id = hashlib.sha256(f":{chapter_id}".encode("utf-8")).digest()[:16]
     seed = base64.b64decode("7e+LqXnWSs6jyCfc1R0h7Q==")
     zeroes = b"\x00" * 4
@@ -141,7 +141,7 @@ def update_cookies():
         COOKIES["user-agent"] = res["solution"]["userAgent"]
 
 
-def get_integrity(series_id, chapter_id):
+def get_integrity():
     if time() > TOKEN["exp"] or TOKEN["token"] is None:
         res = requests.post(
             FLARESOLVERR,
@@ -165,9 +165,9 @@ def get_integrity(series_id, chapter_id):
 
 @api.get("/drm")
 def drm(args):
-    series_id = args.get("sid", None)
-    chapter_id = args.get("cid", None)
-    pssh = get_pssh(series_id, chapter_id)
+    cid = args.get("cid", None)
+    ds = args.get("ds", False)
+    pssh = get_pssh(cid)
     device = Device.load("./device.wvd")
     cdm = Cdm.from_device(device)
     session_id = cdm.open()
@@ -175,14 +175,14 @@ def drm(args):
     print("here")
     update_cookies()
     print("there")
-    get_integrity(series_id, chapter_id)
+    get_integrity()
     print(
         TOKEN,
         COOKIES,
         file=sys.stderr,
     )
     res = requests.post(
-        f"https://yuzuki.kagane.org/api/v2/books/{chapter_id}",
+        f"https://yuzuki.kagane.org/api/v2/books/{cid}?is_datasaver={ds}",
         json={"challenge": base64.b64encode(challenge).decode()},
         headers={
             "Origin": "https://kagane.org",
